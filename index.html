@@ -74,9 +74,15 @@
           
           const [notification, setNotification] = useState(null); 
           const [isPageLoading, setIsPageLoading] = useState(false);
-          const [services, setServices] = useState([]);
+          
+          // MOCK DATA & STATUS FLOW DIPERBARUI
+          const [services, setServices] = useState([
+            { id: 'NS-001', name: 'Budi Santoso', phone: '6281234567890', brand: 'Samsung', type: 'S22 Ultra', status: 'Sedang Diperbaiki', issue: 'LCD Retak', diagnosis: 'LCD ori', harga: 2850000, modal: 2000000, estTime: '1 Hari', date: '30 Apr 2026', technician: 'Andi' },
+            { id: 'NS-002', name: 'Siti Aminah', phone: '6285678901234', brand: 'iPhone', type: '13 Pro', status: 'Menunggu Sparepart', issue: 'Baterai Drop', diagnosis: 'BH 65%', harga: 450000, modal: 250000, estTime: 'Menunggu', date: '29 Apr 2026', technician: 'Budi' },
+            { id: 'NS-003', name: 'Agus', phone: '6281122334455', brand: 'Xiaomi', type: 'Poco X3', status: 'Selesai', issue: 'Mati Total', diagnosis: 'IC Power', harga: 350000, modal: 100000, estTime: 'Selesai', date: '28 Apr 2026', technician: 'Andi' },
+          ]);
 
-          const statusFlow = ['Diterima', 'Dicek', 'Sparepart', 'Proses', 'Selesai'];
+          const statusFlow = ['Diterima', 'Dicek', 'Menunggu Sparepart', 'Sedang Diperbaiki', 'Selesai'];
 
           // --- HELPER FUNCTIONS ---
           const formatRupiah = (angka) => {
@@ -84,11 +90,22 @@
             return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka);
           };
 
+          const formatDate = (dateStr) => {
+            if (!dateStr) return '-';
+            // Jika tanggal dari database berbentuk "2026-04-29T17:00:00.000Z"
+            if (String(dateStr).includes('T') && String(dateStr).includes('Z')) {
+                const d = new Date(dateStr);
+                return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+            }
+            return dateStr;
+          };
+
           // --- SINKRONISASI DATABASE ---
           useEffect(() => {
             if (appState === 'main') {
               setIsPageLoading(true);
-              fetch(API_URL)
+              // Tambahkan parameter waktu (timestamp) agar browser SELALU menarik data terbaru (anti-cache)
+              fetch(`${API_URL}?t=${new Date().getTime()}`)
                 .then(res => res.json())
                 .then(result => {
                   if (result.success) setServices(result.data);
@@ -145,10 +162,10 @@
                   </style>
                 </head>
                 <body>
-                  <div class="center bold id">${service.id}</div><div class="line"></div>
+                  <div class="line"></div>
                   <div class="bold">${service.brand} ${service.type}</div>
                   <div>P: ${service.name}</div><div>K: ${service.issue}</div><div class="line"></div>
-                  <div class="center" style="font-size: 9px;">${service.date} - APP BY AMARMUHAMMAD</div>
+                  <div class="center" style="font-size: 9px;">Masuk: ${formatDate(service.date)} - APP BY AMARMUHAMMAD</div>
                 </body>
               </html>
             `;
@@ -184,32 +201,26 @@
 
           const updateDatabaseStatus = (id, newStatus) => {
             fetch(API_URL, {
-              method: 'POST', body: JSON.stringify({ action: 'update', payload: { id: id, status: newStatus } })
+              method: 'POST', 
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'update', payload: { id: id, status: newStatus } })
             }).catch(err => console.error("Gagal sinkron database", err));
           };
 
-          const handleUpdateStatus = (id) => {
+          // FUNGSI GANTI STATUS BEBAS PILIH
+          const handleStatusChange = (id, newStatus) => {
             setServices(prev => prev.map(s => {
               if (s.id === id) {
-                const currentIndex = statusFlow.indexOf(s.status);
-                const nextStatus = currentIndex < statusFlow.length - 1 && currentIndex !== -1 ? statusFlow[currentIndex + 1] : 'Proses';
+                showNotification('Status Diperbarui', `Notifikasi WA otomatis dikirim ke pelanggan.`, 'wa');
                 
-                showNotification('Pesan WA Terkirim', `Update status ${nextStatus} otomatis dikirim ke ${s.name}.`, 'wa');
-                sendWhatsAppMessage(s.phone, `Halo *${s.name}*,\nTiket: *${s.id}*\nStatus saat ini: *${nextStatus}*\n*APP BY AMARMUHAMMAD*`);
-                updateDatabaseStatus(id, nextStatus);
-                return { ...s, status: nextStatus };
-              }
-              return s;
-            }));
-          };
-
-          const handleMarkSelesai = (id) => {
-            setServices(prev => prev.map(s => {
-              if (s.id === id && s.status !== 'Selesai') {
-                showNotification('Pesan WA Terkirim', `Pemberitahuan unit selesai telah dikirim ke ${s.name}.`, 'wa');
-                sendWhatsAppMessage(s.phone, `Halo *${s.name}*,\nUnit Anda (Tiket: ${s.id}) sudah *SELESAI*.\nTerima kasih!\n*APP BY AMARMUHAMMAD*`);
-                updateDatabaseStatus(id, 'Selesai'); 
-                return { ...s, status: 'Selesai' };
+                if (newStatus === 'Selesai') {
+                  sendWhatsAppMessage(s.phone, `Halo *${s.name}*,\nUnit Anda (Tiket: ${s.id}) sudah *SELESAI*.\nTerima kasih!\n*APP BY AMARMUHAMMAD*`);
+                } else {
+                  sendWhatsAppMessage(s.phone, `Halo *${s.name}*,\nTiket: *${s.id}*\nStatus saat ini: *${newStatus}*\n*APP BY AMARMUHAMMAD*`);
+                }
+                
+                updateDatabaseStatus(id, newStatus);
+                return { ...s, status: newStatus };
               }
               return s;
             }));
@@ -218,7 +229,8 @@
           // --- SPLASH SCREEN LOGIC ---
           useEffect(() => {
             if (appState === 'splash') {
-              const timer = setTimeout(() => switchAppState('login'), 2500);
+              // UBAH ARAH KE CUSTOMER TRACKING SETELAH SPLASH SCREEN
+              const timer = setTimeout(() => switchAppState('customer_tracking'), 2500);
               return () => clearTimeout(timer);
             }
           }, [appState]);
@@ -230,8 +242,8 @@
             <div className="h-full w-full bg-[#0F0F0F] flex flex-col items-center justify-center relative overflow-hidden">
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-[#00BFFF]/20 blur-[80px] rounded-full"></div>
               <div className="z-10 flex flex-col items-center animate-fade-in">
-                <div className="w-24 h-24 bg-gradient-to-tr from-[#00BFFF] to-[#00FF9F] rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(0,191,255,0.5)] mb-6 animate-[bounce_2s_infinite]">
-                  <Wrench size={40} className="text-white" />
+                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-[#00BFFF] shadow-[0_0_30px_rgba(0,191,255,0.5)] mb-6 animate-[bounce_2s_infinite]">
+                  <img src="https://i.ibb.co.com/JRfvPKsh/IMG-20260325-WA0000-1.jpg" alt="Logo" className="w-full h-full object-cover" />
                 </div>
                 <h1 className="text-3xl font-extrabold text-white tracking-widest uppercase">Nanoservice</h1>
                 <p className="text-[#00BFFF] text-sm mt-2 font-medium tracking-widest">APP BY AMARMUHAMMAD</p>
@@ -287,10 +299,8 @@
                   ${isSuccess ? 'scale-90 opacity-0' : 'scale-100'} ${isShake ? 'animate-shake' : ''}`}>
                   
                   <div className="animate-float mb-8">
-                    <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-[#00BFFF] to-[#00FF9F] p-[2px] shadow-[0_0_25px_rgba(0,191,255,0.5)] hover:scale-110 cursor-pointer transition-transform">
-                      <div className="w-full h-full bg-[#0F0F0F] rounded-full flex items-center justify-center">
-                        <Wrench size={32} className="text-white" />
-                      </div>
+                    <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-[#00FF9F] p-[2px] shadow-[0_0_25px_rgba(0,255,159,0.5)] hover:scale-110 cursor-pointer transition-transform">
+                      <img src="https://i.ibb.co.com/JRfvPKsh/IMG-20260325-WA0000-1.jpg" alt="Logo" className="w-full h-full object-cover rounded-full" />
                     </div>
                   </div>
 
@@ -335,16 +345,22 @@
           };
 
           const CustomerTrackingScreen = () => {
-            const [searchInput, setSearchInput] = useState('');
+            // Gunakan state lazy init untuk mengambil data terakhir dari local storage
+            const [searchInput, setSearchInput] = useState(() => localStorage.getItem('nanoservice_last_tracking') || '');
             const [trackedData, setTrackedData] = useState(null);
             const [isSearching, setIsSearching] = useState(false);
 
             const handleSearch = async (e) => {
               e?.preventDefault(); 
               if (!searchInput) return;
+
+              // SIMPAN OTOMATIS KE LOCAL STORAGE AGAR TIDAK CAPEK NGETIK
+              localStorage.setItem('nanoservice_last_tracking', searchInput);
+
               setIsSearching(true); setTrackedData(null);
               try {
-                const response = await fetch(`${API_URL}?id=${searchInput}`);
+                // Tambahkan timestamp anti-cache untuk pelacakan pelanggan
+                const response = await fetch(`${API_URL}?id=${searchInput}&t=${new Date().getTime()}`);
                 const result = await response.json();
                 if (result.success && result.data) setTrackedData(result.data);
                 else setTrackedData('not_found');
@@ -356,10 +372,11 @@
             if (!trackedData || trackedData === 'not_found') {
               return (
                 <div className={`relative flex flex-col items-center justify-center h-full w-full p-6 transition-colors duration-500 ${isDarkMode ? 'bg-[#0F0F0F] text-white' : 'bg-gray-50 text-gray-900'}`}>
-                  <button onClick={() => switchAppState('login')} className="absolute top-6 left-6 p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors border border-white/10 text-gray-400 hover:text-white"><ArrowLeft size={20} /></button>
+                  {/* Tombol Back ke Login dihilangkan agar pelanggan tidak tahu */}
                   
                   <div className="absolute top-6 right-6 flex items-center gap-3">
-                    <div className="text-right">
+                    {/* TOMBOL RAHASIA ADMIN: Klik Teks App By Amarmuhammad untuk membuka menu Login */}
+                    <div className="text-right cursor-pointer" onClick={() => switchAppState('login')}>
                       <p className="text-[8px] text-gray-500 tracking-widest uppercase mb-0.5">App By</p>
                       <p className="text-[10px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#00BFFF] to-[#00FF9F] tracking-wider">AMARMUHAMMAD</p>
                     </div>
@@ -367,8 +384,8 @@
                   </div>
 
                   <div className="w-full max-w-sm flex flex-col items-center animate-fade-in mt-10">
-                    <div className="w-20 h-20 bg-gradient-to-tr from-[#00BFFF] to-[#00FF9F] rounded-2xl flex items-center justify-center shadow-[0_10px_30px_rgba(0,191,255,0.3)] mb-6 transform rotate-12">
-                      <Smartphone size={36} className="text-white -rotate-12" />
+                    <div className="w-24 h-24 rounded-2xl overflow-hidden shadow-[0_10px_30px_rgba(0,191,255,0.3)] mb-6 transform rotate-3">
+                      <img src="https://i.ibb.co.com/JRfvPKsh/IMG-20260325-WA0000-1.jpg" alt="Logo" className="w-full h-full object-cover" />
                     </div>
                     <h1 className="text-2xl font-extrabold mb-2 tracking-tight">Cek Status Servis</h1>
                     <p className="text-sm text-gray-500 text-center mb-8">Masukkan No. Tiket atau No. WA Anda untuk melacak perbaikan HP di server.</p>
@@ -404,14 +421,67 @@
                       <div className="absolute top-0 right-0 w-32 h-32 bg-[#00BFFF] rounded-full filter blur-[60px] opacity-10"></div>
                       <div className="flex justify-between items-start mb-4 relative z-10">
                         <div>
-                          <div className="flex items-center gap-2 mb-1"><h3 className="text-2xl font-black text-[#00BFFF]">{trackedData.id}</h3><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${trackedData.status === 'Selesai' ? 'bg-[#00FF9F]/20 text-[#00FF9F]' : 'bg-yellow-500/20 text-yellow-500'}`}>{trackedData.status}</span></div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-2xl font-black text-[#00BFFF]">{trackedData.id}</h3>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${trackedData.status === 'Selesai' ? 'bg-[#00FF9F]/20 text-[#00FF9F]' : 'bg-yellow-500/20 text-yellow-500'}`}>{trackedData.status}</span>
+                          </div>
                           <p className="text-sm font-bold">{trackedData.brand} {trackedData.type}</p>
+                          <p className="text-xs text-gray-400 mt-1 flex items-center gap-1.5"><Calendar size={12}/> Masuk: {formatDate(trackedData.date)}</p>
                         </div>
                       </div>
-                      <div className="mt-5 relative z-10">
-                        <div className="flex justify-between text-[10px] font-bold text-gray-500 mb-1.5"><span>Progress Perbaikan</span><span className="text-[#00BFFF]">{progressPercent}%</span></div>
-                        <div className="h-2 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-[#00BFFF] to-[#00FF9F] rounded-full" style={{ width: `${progressPercent}%` }}></div></div>
-                      </div>
+                    </div>
+                    
+                    {/* SHOPEE STYLE TIMELINE */}
+                    <div className={`p-5 rounded-[24px] mb-6 shadow-sm ${isDarkMode ? 'bg-[#1A1A1A] border border-white/5' : 'bg-white border border-gray-100'}`}>
+                       <h3 className="text-sm font-bold mb-6 flex items-center gap-2">
+                         <Clock size={16} className="text-[#00BFFF]" /> Riwayat Status
+                       </h3>
+                       <div className="relative pl-3">
+                         <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-200 dark:bg-gray-800 rounded-full"></div>
+                         {[
+                            { title: 'Selesai', icon: Check, desc: 'Perbaikan selesai, HP siap diambil di konter.' },
+                            { title: 'Sedang Diperbaiki', icon: Wrench, desc: 'Teknisi sedang melakukan perbaikan / penggantian sparepart.' },
+                            { title: 'Menunggu Sparepart', icon: Plus, desc: 'Menunggu ketersediaan komponen dari distributor.' },
+                            { title: 'Dicek', icon: Search, desc: 'Sedang dilakukan pengecekan mendalam oleh Teknisi.' },
+                            { title: 'Diterima', icon: CheckCircle, desc: 'Unit diterima di konter dan tiket dibuat.', time: formatDate(trackedData.date) },
+                         ].map((step, index) => {
+                            const actualIndex = 4 - index; 
+                            const isDone = actualIndex < currentStatusIndex;
+                            const isActive = actualIndex === currentStatusIndex;
+                            const isFuture = actualIndex > currentStatusIndex;
+
+                            let dotColor = isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-200 border-gray-300 text-gray-400';
+                            let textColor = isDarkMode ? 'text-gray-500' : 'text-gray-400';
+                            let titleColor = isDarkMode ? 'text-gray-500' : 'text-gray-400';
+
+                            if (isDone) {
+                              dotColor = 'bg-[#00FF9F] border-[#00FF9F] text-[#0F0F0F]';
+                              textColor = isDarkMode ? 'text-gray-400' : 'text-gray-600';
+                              titleColor = isDarkMode ? 'text-gray-300' : 'text-gray-700';
+                            } else if (isActive) {
+                              dotColor = 'bg-[#00BFFF] border-[#00BFFF] text-[#0F0F0F] shadow-[0_0_15px_rgba(0,191,255,0.5)]';
+                              textColor = isDarkMode ? 'text-gray-300' : 'text-gray-600';
+                              titleColor = 'text-[#00BFFF]';
+                            }
+
+                            return (
+                              <div key={index} className={`relative flex gap-4 mb-6 last:mb-0 ${isFuture ? 'opacity-50' : 'opacity-100'}`}>
+                                <div className="relative z-10">
+                                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center -ml-[9px] transition-colors duration-500 ${dotColor} ${isActive ? 'animate-pulse' : ''}`}>
+                                    {isActive ? <div className="w-2 h-2 bg-white rounded-full"></div> : 
+                                     isDone ? <Check size={12} strokeWidth={4} /> : 
+                                     <div className="w-1.5 h-1.5 bg-gray-400 dark:bg-gray-600 rounded-full"></div>}
+                                  </div>
+                                </div>
+                                <div className="flex-1 pb-1 -mt-1">
+                                  <h4 className={`text-sm font-bold mb-1 ${titleColor}`}>{step.title}</h4>
+                                  <p className={`text-[11px] leading-relaxed ${textColor}`}>{step.desc}</p>
+                                  {(isActive || step.time) && <p className="text-[10px] text-gray-400 font-medium mt-1.5">{step.time || 'Sedang diproses...'}</p>}
+                                </div>
+                              </div>
+                            );
+                         })}
+                       </div>
                     </div>
                     
                     <div className={`p-5 rounded-[24px] mb-6 shadow-sm ${isDarkMode ? 'bg-[#1A1A1A] border border-white/5' : 'bg-white border border-gray-100'}`}>
@@ -429,7 +499,7 @@
                     </div>
                   </div>
                   <div className={`absolute bottom-0 w-full p-4 pt-2 border-t backdrop-blur-xl ${isDarkMode ? 'bg-[#121212]/90 border-gray-800' : 'bg-white/90 border-gray-200'}`}>
-                    <button onClick={() => window.open(`https://wa.me/6285813992005?text=Halo admin Nanoservice, tiket ${trackedData.id}`, '_blank')} className="w-full py-3.5 rounded-[16px] bg-[#00FF9F] text-[#0F0F0F] font-extrabold text-sm flex justify-center items-center gap-2">
+                    <button onClick={() => window.open(`https://wa.me/6285813992005?text=Halo admin Nanoservice, saya ingin bertanya tentang servis dengan tiket ${trackedData.id}`, '_blank')} className="w-full py-3.5 rounded-[16px] bg-[#00FF9F] text-[#0F0F0F] font-extrabold text-sm flex justify-center items-center gap-2">
                       <MessageCircle size={18} /> Chat Teknisi
                     </button>
                   </div>
@@ -492,7 +562,7 @@
                       { icon: Search, label: 'Tracking', action: () => switchTab(activeTab, 'tracking'), c: 'bg-emerald-500 text-white' },
                       { icon: Wrench, label: 'Teknisi', action: () => switchTab(activeTab, 'teknisi'), c: 'bg-orange-500 text-white' },
                       { icon: Wallet, label: 'Kasir', action: () => switchTab('kasir'), c: 'bg-purple-500 text-white' },
-                      { icon: Users, label: 'Pelanggan', action: null, c: 'bg-pink-500 text-white' },
+                      { icon: Users, label: 'Pelanggan', action: () => switchTab(activeTab, 'pelanggan'), c: 'bg-pink-500 text-white' },
                       { icon: BarChart3, label: 'Laporan', action: () => switchTab(activeTab, 'laporan'), c: 'bg-indigo-500 text-white' },
                     ].map((m, i) => (
                       <div key={i} onClick={m.action} className="flex flex-col items-center gap-2 cursor-pointer">
@@ -517,7 +587,7 @@
                           </div>
                           <div>
                             <p className="text-sm font-bold">{srv.brand} {srv.type}</p>
-                            <p className="text-[10px] text-gray-500">{srv.id} • {srv.name}</p>
+                            <p className="text-[10px] text-gray-500">{srv.id} • {formatDate(srv.date)}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -555,7 +625,11 @@
               switchTab('home');
 
               try {
-                await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'create', payload: newService }) });
+                await fetch(API_URL, { 
+                  method: 'POST', 
+                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                  body: JSON.stringify({ action: 'create', payload: newService }) 
+                });
                 showNotification('Database Sukses', `Tiket ${newId} berhasil dicatat di Server.`, 'system');
               } catch (err) {
                 console.error("Gagal menyimpan ke Sheet:", err); showNotification('Sync Error', 'Gagal menyinkronkan data ke Server Sheet.', 'error');
@@ -667,15 +741,100 @@
                     <span className="text-xs bg-orange-500/20 text-orange-500 px-2 py-0.5 rounded-full">{srv.status}</span>
                   </div>
                   <h3 className="text-lg font-bold">{srv.brand} {srv.type}</h3>
+                  <p className="text-[10px] text-gray-500 mb-1 flex items-center gap-1.5"><Calendar size={12}/> Masuk: {formatDate(srv.date)}</p>
                   <p className="text-sm text-gray-500 mt-1 mb-3">K: {srv.issue}</p>
-                  <div className="flex gap-2 mt-4 pt-4 border-t border-gray-800">
-                     <button onClick={() => handleUpdateStatus(srv.id)} className="flex-1 py-2 text-sm font-bold bg-gray-800 text-white rounded-[12px]">Majukan Status</button>
-                     <button onClick={() => handleMarkSelesai(srv.id)} className="flex-1 py-2 text-sm font-bold bg-[#00FF9F] text-[#0F0F0F] rounded-[12px]">Selesai</button>
+                  
+                  {/* DROPDOWN PILIH STATUS */}
+                  <div className="mt-4 pt-4 border-t border-gray-800 flex gap-2">
+                     <select 
+                        value={srv.status}
+                        onChange={(e) => handleStatusChange(srv.id, e.target.value)}
+                        className={`flex-1 py-2 text-sm font-bold rounded-[12px] text-center outline-none border transition-colors ${isDarkMode ? 'bg-gray-800 text-white border-gray-700 focus:border-[#00BFFF]' : 'bg-gray-100 text-gray-900 border-gray-200 focus:border-[#00BFFF]'}`}
+                     >
+                        {statusFlow.map(st => <option key={st} value={st}>Ubah: {st}</option>)}
+                     </select>
+                     <button onClick={() => handleStatusChange(srv.id, 'Selesai')} className="px-4 py-2 text-sm font-bold bg-[#00FF9F] text-[#0F0F0F] rounded-[12px]">Selesai</button>
                   </div>
+
                 </div>
               ))}
             </div>
           );
+
+          // --- MENU BARU: DATA PELANGGAN LENGKAP ---
+          const SubViewPelanggan = () => {
+            const [searchQuery, setSearchQuery] = useState('');
+
+            // Filter data berdasarkan ketikan pada kolom pencarian
+            const filteredCustomers = services.filter(s => 
+              s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+              s.phone.includes(searchQuery) ||
+              s.id.toLowerCase().includes(searchQuery.toLowerCase())
+            );
+
+            return (
+              <div className="space-y-4 animate-fade-in pb-24">
+                <div className="flex items-center gap-3 mb-4">
+                  <button onClick={() => switchTab(activeTab, null)} className="p-2 bg-gray-800 rounded-full text-white"><ChevronRight size={20} className="rotate-180"/></button>
+                  <h2 className="text-xl font-bold">Data Pelanggan</h2>
+                </div>
+
+                <div className="relative mb-4">
+                  <input 
+                    type="text" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Cari nama, no WA, atau tiket..." 
+                    className={`w-full pl-10 pr-4 py-3 text-sm rounded-[18px] outline-none transition-colors ${isDarkMode ? 'bg-gray-900 text-white focus:border-[#00BFFF] border border-transparent' : 'bg-white text-gray-900 border border-gray-200 focus:border-[#00BFFF] shadow-sm'}`} 
+                  />
+                  <Search size={18} className="absolute left-4 top-3.5 text-gray-400" />
+                </div>
+
+                <div className="space-y-3">
+                  {filteredCustomers.length > 0 ? filteredCustomers.map((srv, i) => (
+                    <div key={i} className={`p-4 rounded-[18px] ${isDarkMode ? 'bg-gray-900 border border-gray-800' : 'bg-white shadow-sm border border-gray-100'}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h3 className="text-sm font-bold text-[#00BFFF]">{srv.name}</h3>
+                          <p className="text-xs text-gray-500 font-medium tracking-wider">{srv.phone}</p>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${srv.status === 'Selesai' ? 'bg-[#00FF9F]/20 text-[#00FF9F]' : 'bg-orange-500/20 text-orange-500'}`}>
+                          {srv.status}
+                        </span>
+                      </div>
+
+                      <div className={`mt-3 pt-3 border-t ${isDarkMode ? 'border-gray-800' : 'border-gray-100'}`}>
+                        <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                          <div>
+                            <p className="text-gray-500">Tiket</p>
+                            <p className="font-bold text-gray-800 dark:text-gray-200">{srv.id}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-500">Tanggal Masuk</p>
+                            <p className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1"><Calendar size={12}/> {formatDate(srv.date)}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-500">Unit</p>
+                            <p className="font-bold text-gray-800 dark:text-gray-200">{srv.brand} {srv.type}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-gray-500">Keluhan</p>
+                            <p className="font-bold text-gray-800 dark:text-gray-200">{srv.issue}</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <button onClick={() => window.open(`https://wa.me/${srv.phone.startsWith('0') ? '62' + srv.phone.substring(1) : srv.phone}?text=Halo kak ${srv.name}, menginformasikan mengenai servis HP ${srv.brand} ${srv.type} dengan tiket ${srv.id}.`, '_blank')} className="mt-4 w-full py-2.5 bg-[#00FF9F]/10 text-[#00FF9F] hover:bg-[#00FF9F]/20 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors">
+                        <MessageCircle size={14} /> Hubungi via WhatsApp
+                      </button>
+                    </div>
+                  )) : (
+                    <div className="text-center p-8 text-gray-500">Pelanggan tidak ditemukan.</div>
+                  )}
+                </div>
+              </div>
+            );
+          };
 
           const SubViewLaporan = () => {
             const omsetTotal = services.filter(s=>s.status==='Selesai').reduce((acc, curr) => acc + (parseInt(curr.harga) || 0), 0);
@@ -752,6 +911,7 @@
                   {activeSubView === 'teknisi' ? <SubViewTeknisi /> :
                    activeSubView === 'tracking' ? <SubViewTracking /> :
                    activeSubView === 'laporan' ? <SubViewLaporan /> :
+                   activeSubView === 'pelanggan' ? <SubViewPelanggan /> :
                    activeTab === 'home' ? <TabHome /> :
                    activeTab === 'service' ? <TabService /> :
                    activeTab === 'kasir' ? <TabKasir /> :
